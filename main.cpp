@@ -1,10 +1,13 @@
 #include "ChatUser.h"
 #include "ChatArray.h"
+#include "system_connection.h"
+
 #include <string>
-//#include <cstring>
 #include <iostream>
 #include <fstream>
 #include <stdlib.h>
+
+#define SERVER
 
 // Шаблонная функция для получения ввода от пользователя с обработкой исключений
 template <typename T>
@@ -23,6 +26,8 @@ T getInput(const std::string& prompt) {
 }
 
 int main() {
+    system_connection(); //подключаем определение системы...
+
     std::vector<ChatUser> user_database;
     std::string _name;
     std::string _login;
@@ -81,6 +86,46 @@ int main() {
                             std::string recipient = getInput<std::string>("Введите имя получателя: ");
                             std::string message = getInput<std::string>("Введите ваше сообщение: ");
                             chat->sendMessage(_name, recipient, message); // отправляем сообщение
+                            // начинаем процедуру отправки по сети, версия клиента
+                            #if defined CLIENT
+                            ClientChat();
+                            if ((strncmp(message, "end", 3)) == 0) {
+                              write(socket_file_descriptor, message, sizeof(message));
+                              std::cout << "Client Exit." << std::endl;
+                              break;
+                            }
+                            ssize_t bytes = write(socket_file_descriptor, message, sizeof(message));
+                            // Если передали >= 0  байт, значит пересылка прошла успешно
+                            if(bytes >= 0){
+                              std::cout << "Data send to the server successfully..." << endl;
+                            }
+                            // Ждем ответа от сервера
+                            read(socket_file_descriptor, message, sizeof(message));
+                            std::cout << "Data received from server: " << message << std::endl;
+                            // начинаем процедуру отправки по сети, версия сервера
+                            #elif defined SERVER
+                            ChatServer();
+                            char *message_send = new char[message.length() + 1];
+                            strcpy(message_send, message.c_str());
+
+                            bzero(message_send, MESSAGE_LENGTH);
+                            read(connection, message_send, sizeof(message_send));
+                            if (strncmp("end", message_send, 3) == 0) {
+                              std::cout << "Client Exited." << std::endl;
+                              std::cout << "Server is Exiting..ю" << std::endl;
+                              close(socket_file_descriptor);
+                              return(1);
+                            }
+                            std::cout << "Data received from client: " <<  message << std::endl;
+                            bzero(message_send, MESSAGE_LENGTH);
+                            ssize_t bytes = write(connection, message_send, sizeof(message_send));
+                            if(bytes >= 0)  {
+                              std::cout << "Data successfully sent to the client.!" << std::endl;
+                            }
+                            #else
+                            std::cout << "Offline messaging is avaliable" << std::endl;
+                            #endif
+
                             std::cout << "Сообщение отправлено " << recipient << "." << std::endl;
                         }
                         else if (choice == "p") { // если пользователь выбрал 'p', то показываем все его сообщения
@@ -96,7 +141,7 @@ int main() {
                         std::cerr << "Ошибка: " << e.what() << std::endl;
                     }
                 }
-
+                close(socket_file_descriptor);
                 return 0;
             }
         }
